@@ -37,6 +37,18 @@ pnpm --filter @loadearn/extension build:local   # .output/chrome-mv3-localstack,
 
 Development builds talk to `http://localhost:3000`, so testing never creates real impressions. Override the API with `WXT_API_BASE`; production builds accept HTTPS origins only.
 
+## Reproducing the store builds
+
+On Node.js 22+ with pnpm 9.15.9, from the repository root, with no environment variables set:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm --filter @loadearn/extension zip           # apps/extension/.output/loadearn-<version>-chrome.zip
+pnpm --filter @loadearn/extension zip:firefox   # apps/extension/.output/loadearn-<version>-firefox.zip
+```
+
+The unpacked output in `apps/extension/.output/chrome-mv3` and `apps/extension/.output/firefox-mv3` matches the submitted packages.
+
 ## License
 
 [PolyForm Strict 1.0.0](LICENSE). Copyright © 2026 Norakon.

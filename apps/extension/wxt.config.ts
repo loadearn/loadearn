@@ -3,6 +3,12 @@ import { defineConfig } from 'wxt';
 export default defineConfig({
   srcDir: 'src',
   imports: false,
+  zip: {
+    artifactTemplate: 'loadearn-{{version}}-{{browser}}.zip',
+    sourcesTemplate: 'loadearn-{{version}}-sources.zip',
+    sourcesRoot: '../..',
+    excludeSources: ['**/.output/**', '**/.wxt/**', '**/coverage/**', '.agents/**', '.claude/**', 'skills-lock.json'],
+  },
   manifest: ({ browser, mode, command }) => ({
     name: 'LoadEarn',
     description: 'Get paid while AI thinks. One sponsored line while your AI chat is writing a reply.',
@@ -19,7 +25,7 @@ export default defineConfig({
         gecko: {
           id: 'extension@loadearn.com',
           strict_min_version: '140.0',
-          data_collection_permissions: { required: ['browsingActivity'] },
+          data_collection_permissions: { required: ['browsingActivity', 'websiteActivity'] },
         },
       },
     }),
