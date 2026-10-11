@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LoadEarn</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <header class="header">
+        <h1 class="brand">Load<em>Earn</em></h1>
+        <label class="switch" title="Show sponsored lines">
+          <input id="enabled" type="checkbox" />
+          <span class="slider" aria-hidden="true"></span>
+          <span class="sr-only">Show sponsored lines</span>
+        </label>
+      </header>
+
+      <section id="setup" class="panel" hidden>
+        <p>Finish setup to start earning.</p>
+        <button id="finish-setup" class="button" type="button">Finish setup</button>
+      </section>
+
+      <section id="connect" class="panel" hidden>
+        <p>Connect your LoadEarn account so your views count toward payouts.</p>
+        <button id="connect-account" class="button" type="button">Connect account</button>
+      </section>
+
+      <section id="earnings" class="panel" hidden>
+        <p class="label">Earned today</p>
+        <p id="earned-today" class="amount">$0.00</p>
+        <p id="views-today" class="muted"></p>
+        <div class="progress" aria-hidden="true"><span id="progress-bar"></span></div>
+        <p id="payout-hint" class="muted small"></p>
+        <p class="total">Total <strong id="earned-total">$0.00</strong></p>
+      </section>
+
+      <section id="pause" class="pause" hidden>
+        <div id="pause-actions" class="pause-actions">
+          <button class="chip" type="button" data-pause="hour">Pause 1 hour</button>
+          <button class="chip" type="button" data-pause="tomorrow">Pause until tomorrow</button>
+        </div>
+        <div id="paused" class="paused" hidden>
+          <p id="paused-until"></p>
+          <button id="resume" class="chip" type="button">Resume</button>
+        </div>
+      </section>
+
+      <a id="dashboard" class="button secondary" target="_blank" rel="noopener noreferrer">Open dashboard</a>
+      <p class="footnote muted">Estimated until confirmed · <span id="version"></span></p>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

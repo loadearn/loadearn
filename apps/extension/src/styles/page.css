@@ -1,0 +1,100 @@
+@import '@fontsource-variable/hanken-grotesk';
+@import '@fontsource-variable/fraunces';
+
+:root {
+  --paper: #f2efe8;
+  --paper-2: #e9e5db;
+  --ink: #121211;
+  --ink-2: #2a2926;
+  --muted: #6e6a61;
+  --line: #d9d3c6;
+  --signal: #ff5b1f;
+  --signal-soft: #ffe1d4;
+  --money: #127a49;
+  --font-display: 'Fraunces Variable', Georgia, serif;
+  --font-sans: 'Hanken Grotesk Variable', system-ui, sans-serif;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 14px/1.5 var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--signal);
+  color: var(--paper);
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+}
+
+.brand {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.brand em {
+  color: var(--signal);
+  font-style: italic;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.button:hover {
+  background: var(--signal);
+  border-color: var(--signal);
+}
+
+.button.secondary {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.button.secondary:hover {
+  border-color: var(--ink);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+[hidden] {
+  display: none !important;
+}

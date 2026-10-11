@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Welcome to LoadEarn</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="welcome">
+      <section id="consent" class="panel">
+        <h1 class="brand">Welcome to Load<em>Earn</em></h1>
+        <p>
+          While ChatGPT, Claude, Gemini or DeepSeek is writing a reply, LoadEarn shows one sponsored line below your message.
+          You earn a share of what advertisers pay for every line that stays on screen for 10 seconds.
+        </p>
+
+        <h2>What LoadEarn reads</h2>
+        <p>Only whether the AI is generating and where your last message sits on the page. Never the text of your chats.</p>
+
+        <h2>What LoadEarn sends</h2>
+        <p>
+          The site the line appeared on, which ad it was, and when it was seen or clicked. Everything goes to LoadEarn's
+          own servers. No chat content and no browsing history.
+        </p>
+
+        <p class="muted">Next, you'll sign in with Google to link this browser to your account. You can turn LoadEarn off at any time from the toolbar icon.</p>
+
+        <div class="actions">
+          <button id="accept" class="button" type="button">Turn on LoadEarn</button>
+          <button id="decline" class="button secondary" type="button">Not now</button>
+        </div>
+
+        <p class="legal muted">
+          By turning it on you agree to the <a id="terms" target="_blank" rel="noopener noreferrer">Terms</a> and
+          <a id="privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
+        </p>
+      </section>
+
+      <section id="done" class="panel" hidden>
+        <h1>You're all set</h1>
+        <div id="connect-step" class="step" hidden>
+          <p>One more step: connect your LoadEarn account so your views count toward payouts.</p>
+          <a id="connect" class="button" target="_blank" rel="noopener">Connect your account</a>
+        </div>
+        <p>Send a prompt on any of these sites. The sponsored line appears while the AI is thinking.</p>
+        <div class="actions">
+          <a class="button secondary" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">ChatGPT</a>
+          <a class="button secondary" href="https://claude.ai/" target="_blank" rel="noopener noreferrer">Claude</a>
+          <a class="button secondary" href="https://gemini.google.com/" target="_blank" rel="noopener noreferrer">Gemini</a>
+          <a class="button secondary" href="https://chat.deepseek.com/" target="_blank" rel="noopener noreferrer">DeepSeek</a>
+        </div>
+        <p class="muted">Pin LoadEarn to your toolbar to keep an eye on your earnings.</p>
+      </section>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,54 @@
+@import '../../styles/page.css';
+
+body {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+}
+
+.welcome {
+  width: 100%;
+  max-width: 560px;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--paper-2);
+}
+
+.panel h1 {
+  font-size: 30px;
+  line-height: 1.15;
+}
+
+.panel h2 {
+  margin-top: 6px;
+  font-size: 15px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--signal-soft);
+}
+
+.legal {
+  font-size: 12px;
+}
