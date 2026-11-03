@@ -27,6 +27,14 @@ describe('parseAdResponse', () => {
     expect(parseAdResponse({ ad: { ...ad, url: 'http://acme.example' } })).toBeNull();
   });
 
+  it('keeps a valid image reference and ignores invalid ones', () => {
+    const id = 'b'.repeat(64);
+    expect(parseAdResponse({ ad: { ...ad, format: 'banner', imageId: id } })?.imageRef).toEqual({ format: 'banner', id });
+    expect(parseAdResponse({ ad: { ...ad, format: 'logo', imageId: '../x' } })?.imageRef).toBeUndefined();
+    expect(parseAdResponse({ ad: { ...ad, format: 'video', imageId: id } })?.imageRef).toBeUndefined();
+    expect(parseAdResponse({ ad: { ...ad, format: 'text' } })).toEqual(ad);
+  });
+
   it('truncates long copy', () => {
     expect(parseAdResponse({ ad: { ...ad, text: 'x'.repeat(300) } })?.text.length).toBeLessThanOrEqual(90);
   });

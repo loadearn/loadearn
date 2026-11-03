@@ -1,5 +1,5 @@
 import { formatUsd } from '@/lib/format';
-import type { Ad } from '@/lib/types';
+import type { Ad, AdImage } from '@/lib/types';
 
 const LABEL = 'Sponsored · LoadEarn';
 const EARNED_VISIBLE_MS = 3_000;
@@ -18,10 +18,15 @@ const STYLES = `
 .label.earned { color: var(--money); font-weight: 600; }
 .label.earned::before { background: var(--money); }
 .row { display: flex; align-items: center; gap: 8px; }
-.ad { flex: 1; min-width: 0; color: var(--fg); text-decoration: underline; text-decoration-color: var(--line);
-  text-underline-offset: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ad:hover { text-decoration-color: var(--signal); }
+.ad { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; color: var(--fg); text-decoration: none; }
+.copy { min-width: 0; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ad:hover .copy { text-decoration-color: var(--signal); }
 .advertiser { font-weight: 700; }
+.logo { flex: none; width: 32px; height: 32px; border-radius: 6px; }
+.banner { display: block; width: min(320px, 100%); aspect-ratio: 16 / 5; margin: 2px 0; border-radius: 8px;
+  overflow: hidden; outline: 1px solid var(--line); outline-offset: -1px; }
+.banner canvas { display: block; width: 100%; height: 100%; }
 .close { flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent;
   color: var(--muted); font: 16px/1 system-ui, sans-serif; cursor: pointer; }
 .close:hover { background: var(--line); color: var(--fg); }
@@ -59,6 +64,30 @@ function element<K extends keyof HTMLElementTagNameMap>(tag: K, className: strin
   return node;
 }
 
+function decodeBase64(value: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+/**
+ * Draws the image on a canvas instead of using <img>: AI sites restrict which image URLs a page
+ * may load (claude.ai allows only its own), and a canvas needs no URL. If decoding fails the
+ * canvas is removed and the ad stays as text.
+ */
+function drawImage(image: AdImage, canvas: HTMLCanvasElement, onFail: () => void): void {
+  const blob = new Blob([decodeBase64(image.webpBase64)], { type: 'image/webp' });
+  createImageBitmap(blob)
+    .then((bitmap) => {
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
+      bitmap.close();
+    })
+    .catch(onFail);
+}
+
 export function createCard(ad: Ad, themeSource: Element, handlers: CardHandlers): Card {
   const host = document.createElement('loadearn-card');
   const shadow = host.attachShadow({ mode: 'closed' });
@@ -76,10 +105,34 @@ export function createCard(ad: Ad, themeSource: Element, handlers: CardHandlers)
   link.href = ad.url;
   link.target = '_blank';
   link.rel = 'noopener noreferrer sponsored';
-  link.append(element('span', 'advertiser', ad.advertiser), document.createTextNode(` — ${ad.text}`));
-  link.addEventListener('click', (event) => {
+  const copy = element('span', 'copy');
+  copy.append(element('span', 'advertiser', ad.advertiser), document.createTextNode(` — ${ad.text}`));
+  link.append(copy);
+  const onLinkClick = (event: MouseEvent) => {
     if (event.isTrusted) handlers.onClick();
-  });
+  };
+  link.addEventListener('click', onLinkClick);
+
+  let banner: HTMLAnchorElement | null = null;
+  if (ad.image?.format === 'logo') {
+    const logo = element('canvas', 'logo');
+    logo.setAttribute('aria-hidden', 'true');
+    link.prepend(logo);
+    drawImage(ad.image, logo, () => logo.remove());
+  } else if (ad.image?.format === 'banner') {
+    // The text link below says the same, so the banner is skipped by keyboards and screen readers.
+    const bannerLink = element('a', 'banner');
+    bannerLink.href = ad.url;
+    bannerLink.target = '_blank';
+    bannerLink.rel = 'noopener noreferrer sponsored';
+    bannerLink.tabIndex = -1;
+    bannerLink.setAttribute('aria-hidden', 'true');
+    bannerLink.addEventListener('click', onLinkClick);
+    const canvas = document.createElement('canvas');
+    bannerLink.append(canvas);
+    drawImage(ad.image, canvas, () => bannerLink.remove());
+    banner = bannerLink;
+  }
 
   const close = element('button', 'close', '×');
   close.type = 'button';
@@ -90,7 +143,7 @@ export function createCard(ad: Ad, themeSource: Element, handlers: CardHandlers)
 
   const row = element('div', 'row');
   row.append(link, close);
-  card.append(label, row);
+  card.append(label, ...(banner ? [banner] : []), row);
   shadow.append(style, card);
 
   let labelTimer: ReturnType<typeof setTimeout> | undefined;

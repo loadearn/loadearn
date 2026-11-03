@@ -2,12 +2,21 @@ export type Surface = 'chatgpt' | 'claude' | 'gemini' | 'deepseek';
 
 export type AdSource = 'partner' | 'direct' | 'house';
 
+export type ImageFormat = 'logo' | 'banner';
+
+/** A campaign image as the background passes it to the page: WebP bytes in base64. */
+export interface AdImage {
+  format: ImageFormat;
+  webpBase64: string;
+}
+
 export interface Ad {
   viewId: string;
   source: AdSource;
   advertiser: string;
   text: string;
   url: string;
+  image?: AdImage;
 }
 
 export interface SiteSelectors {
