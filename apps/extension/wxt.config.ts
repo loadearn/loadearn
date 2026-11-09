@@ -11,7 +11,7 @@ export default defineConfig({
   },
   manifest: ({ browser, mode, command }) => ({
     name: 'LoadEarn',
-    description: 'Get paid while AI thinks. One sponsored line while your AI chat is writing a reply.',
+    description: 'Get paid while AI thinks. One small sponsored ad while your AI chat is writing a reply.',
     homepage_url: 'https://loadearn.com',
     permissions: ['storage', 'alarms'],
     host_permissions:
