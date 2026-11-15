@@ -61,3 +61,10 @@ export function createLock(): <T>(task: () => Promise<T>) => Promise<T> {
 }
 
 export const withLock = createLock();
+
+/** Forgets a device token the server no longer accepts, unless a new one was stored meanwhile. */
+export async function forgetDeviceToken(token: string): Promise<void> {
+  await withLock(async () => {
+    if ((await deviceTokenItem.getValue()) === token) await deviceTokenItem.setValue(null);
+  });
+}

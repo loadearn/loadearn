@@ -9,8 +9,15 @@ const TAB = 7;
 const TOKEN = `le_${'a'.repeat(43)}`;
 const VIEW_ID = '6f1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b';
 
-function apiReturns(body: unknown): void {
-  vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => new Response(JSON.stringify(body))));
+/** Answers ad requests with `body`. Event uploads fail, so recorded events stay in the queue to be inspected. */
+function apiReturns(body: unknown, status = 200): void {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation(async (url: string) => {
+      if (url.endsWith('/v1/events')) throw new Error('offline');
+      return new Response(JSON.stringify(body), { status });
+    }),
+  );
 }
 
 const directAd = {
@@ -39,6 +46,7 @@ function apiAndPartner(body: unknown): string[] {
     'fetch',
     vi.fn().mockImplementation(async (url: string) => {
       if (url.endsWith('/v1/ads')) return new Response(JSON.stringify(body));
+      if (url.endsWith('/v1/events')) throw new Error('offline');
       impressions.push(url);
       return new Response(null);
     }),
@@ -96,6 +104,40 @@ describe('ad lifecycle', () => {
     await deviceTokenItem.setValue(TOKEN);
     apiReturns({ ad: null });
     expect(await serveAd('gemini', TAB)).toBeNull();
+  });
+
+  it('asks a browser whose device was disconnected to connect again', async () => {
+    await deviceTokenItem.setValue(TOKEN);
+    apiReturns({ error: 'unauthorized' }, 401);
+    expect(await serveAd('gemini', TAB)).toMatchObject({ source: 'house', text: 'Connect your account to start earning' });
+    expect(await deviceTokenItem.getValue()).toBeNull();
+  });
+
+  it('keeps the device connected when the API is unavailable', async () => {
+    await deviceTokenItem.setValue(TOKEN);
+    apiReturns({ error: 'unavailable' }, 503);
+    expect(await serveAd('gemini', TAB)).toBeNull();
+    expect(await deviceTokenItem.getValue()).toBe(TOKEN);
+  });
+
+  it('uploads a view as soon as it is recorded', async () => {
+    await deviceTokenItem.setValue(TOKEN);
+    const uploads: unknown[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        if (url.endsWith('/v1/ads')) return new Response(JSON.stringify(directAd));
+        uploads.push(JSON.parse(init?.body as string));
+        return new Response('{}');
+      }),
+    );
+    vi.useFakeTimers({ toFake: ['Date'] });
+    await serveAd('chatgpt', TAB);
+    vi.advanceTimersByTime(10_000);
+    await recordView(VIEW_ID, TAB);
+
+    await vi.waitFor(async () => expect(await queueItem.getValue()).toEqual([]));
+    expect(uploads).toEqual([{ events: [expect.objectContaining({ type: 'view', viewId: VIEW_ID })] }]);
   });
 
   it('records an API ad once, after the dwell time, from the serving tab only', async () => {

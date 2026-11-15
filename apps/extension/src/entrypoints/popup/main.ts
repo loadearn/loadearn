@@ -57,13 +57,18 @@ function render(state: StateSnapshot | null): void {
   byId('earned-total').textContent = formatUsd(shown.total);
   byId('views-today').textContent = `${shown.views} ${shown.views === 1 ? 'view' : 'views'} today`;
 
+  // Progress counts what has not been paid out yet. Earnings can be cashed out from the 1st of the next month.
   const minimum = connected && account ? account.payoutMinimumUsd : PAYOUT_MINIMUM_USD;
-  const progress = Math.min(shown.total / minimum, 1);
+  const balance = connected && account ? account.balanceUsd : stats.earnedTotalUsd;
+  const available = connected && account ? account.availableUsd : 0;
+  const progress = Math.min(balance / minimum, 1);
   byId('progress-bar').style.width = `${Math.round(progress * 100)}%`;
   byId('payout-hint').textContent =
-    progress >= 1
+    available >= minimum
       ? 'You can cash out from the dashboard.'
-      : `${formatUsd(minimum - shown.total)} to your first ${formatUsd(minimum)} payout`;
+      : progress >= 1
+        ? `You reached ${formatUsd(minimum)}. Cash out from the 1st of next month.`
+        : `${formatUsd(minimum - balance)} to your next ${formatUsd(minimum)} payout`;
 }
 
 enabled.addEventListener('change', async () => {

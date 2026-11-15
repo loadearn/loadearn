@@ -1,6 +1,6 @@
 import { API_BASE } from '@/lib/env';
 import type { AdSource, Surface } from '@/lib/types';
-import { deviceTokenItem, queueItem, withLock } from './state';
+import { deviceTokenItem, forgetDeviceToken, queueItem, withLock } from './state';
 
 export interface AdEvent {
   id: string;
@@ -45,9 +45,7 @@ export async function flushQueue(): Promise<void> {
   }
 
   if (response.status === 401) {
-    await withLock(async () => {
-      if ((await deviceTokenItem.getValue()) === token) await deviceTokenItem.setValue(null);
-    });
+    await forgetDeviceToken(token);
     return;
   }
   if (!response.ok) return;

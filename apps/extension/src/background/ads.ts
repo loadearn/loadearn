@@ -1,7 +1,7 @@
 import { CONNECT_URL } from '@/lib/env';
 import type { Ad, Settings, StateSnapshot, Surface } from '@/lib/types';
 import { confirmImpression, fetchAd } from './ad-api';
-import { enqueue } from './queue';
+import { enqueue, flushQueue } from './queue';
 import { getConfig } from './remote-config';
 import {
   deviceTokenItem,
@@ -108,7 +108,7 @@ export async function recordShown(viewId: string, tabId: number): Promise<null> 
 }
 
 export async function recordView(viewId: string, tabId: number): Promise<{ earnedUsd: number } | null> {
-  return withLock(async () => {
+  const result = await withLock(async () => {
     const [pending, config] = await Promise.all([pendingItem.getValue(), getConfig()]);
     const view = pending[viewId];
     const now = Date.now();
@@ -141,10 +141,13 @@ export async function recordView(viewId: string, tabId: number): Promise<{ earne
     });
     return { earnedUsd };
   });
+  // Sent right away: the server only accepts a view for a short time after the ad was served.
+  if (result) void flushQueue();
+  return result;
 }
 
 export async function recordClick(viewId: string, tabId: number): Promise<null> {
-  return withLock(async () => {
+  await withLock(async () => {
     const pending = await pendingItem.getValue();
     const view = pending[viewId];
     if (!view || view.tabId !== tabId || view.clickedAt !== null) return null;
@@ -153,4 +156,6 @@ export async function recordClick(viewId: string, tabId: number): Promise<null> 
     if (view.tracked) await enqueue({ ...view.event, id: crypto.randomUUID(), type: 'click', occurredAt: now });
     return null;
   });
+  void flushQueue();
+  return null;
 }

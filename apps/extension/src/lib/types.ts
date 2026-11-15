@@ -59,6 +59,10 @@ export interface AccountStats {
   viewsToday: number;
   earnedTodayUsd: number;
   lifetimeUsd: number;
+  /** Everything not paid out yet: earnings still pending plus what can be cashed out. */
+  balanceUsd: number;
+  /** The part of the balance that can be cashed out now. */
+  availableUsd: number;
   payoutMinimumUsd: number;
 }
 

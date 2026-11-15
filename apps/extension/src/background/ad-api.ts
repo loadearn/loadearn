@@ -4,7 +4,7 @@ import { truncate } from '@/lib/format';
 import type { AccountStats, Ad, ImageFormat, Surface } from '@/lib/types';
 import { partnerTrackingUrl, safeHttpsUrl } from '@/lib/url';
 import { getConfig } from './remote-config';
-import { deviceTokenItem, queueItem } from './state';
+import { deviceTokenItem, forgetDeviceToken, queueItem } from './state';
 
 const REQUEST_TIMEOUT_MS = 5_000;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -110,6 +110,8 @@ export async function fetchAd(surface: Surface): Promise<RemoteAd | null> {
       credentials: 'omit',
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
+    // The device was disconnected, so the user is asked to connect again.
+    if (response.status === 401 && token) await forgetDeviceToken(token);
     if (!response.ok) return null;
     const ad = parseAdResponse(await response.json());
     if (!ad?.imageRef) return ad;
@@ -171,6 +173,7 @@ export async function fetchAccountStats(): Promise<AccountStats | null> {
       credentials: 'omit',
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
+    if (response.status === 401) await forgetDeviceToken(token);
     if (!response.ok) return null;
     body = await response.json();
   } catch {
@@ -181,7 +184,13 @@ export async function fetchAccountStats(): Promise<AccountStats | null> {
   const views = nonNegativeNumber(fields.viewsToday);
   const earnedMicros = nonNegativeNumber(fields.earnedTodayMicros);
   const lifetimeMicros = nonNegativeNumber(fields.lifetimeMicros);
-  if (views === null || earnedMicros === null || lifetimeMicros === null) return null;
+  const pendingMicros = nonNegativeNumber(fields.pendingMicros);
+  // The available balance is negative when a survey was reversed after a payout.
+  const availableMicros =
+    typeof fields.availableMicros === 'number' && Number.isFinite(fields.availableMicros) ? fields.availableMicros : null;
+  if (views === null || earnedMicros === null || lifetimeMicros === null || pendingMicros === null || availableMicros === null) {
+    return null;
+  }
 
   const [queue, config] = await Promise.all([queueItem.getValue(), getConfig()]);
   const queuedViews = queue.filter((event) => event.type === 'view');
@@ -193,6 +202,8 @@ export async function fetchAccountStats(): Promise<AccountStats | null> {
     viewsToday: views + queuedViews.length,
     earnedTodayUsd: earnedMicros / 1_000_000 + queuedUsd,
     lifetimeUsd: lifetimeMicros / 1_000_000 + queuedUsd,
+    balanceUsd: Math.max(pendingMicros + availableMicros, 0) / 1_000_000 + queuedUsd,
+    availableUsd: Math.max(availableMicros, 0) / 1_000_000,
     payoutMinimumUsd: (nonNegativeNumber(fields.payoutMinimumMicros) || PAYOUT_MINIMUM_USD * 1_000_000) / 1_000_000,
   };
 }
