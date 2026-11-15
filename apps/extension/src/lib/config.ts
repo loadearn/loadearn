@@ -14,7 +14,6 @@ export const PAYOUT_MINIMUM_USD = 5;
 export const DEFAULT_CONFIG: ClientConfig = {
   minDwellMs: 10_000,
   minIntervalMs: 10_000,
-  dailyViewCap: 150,
   estimatedViewValueUsd: 0.0012,
   sites: {
     chatgpt: {
@@ -98,9 +97,8 @@ export function parseConfig(value: unknown): ClientConfig | null {
 
   const minDwellMs = boundedInt(value.minDwellMs, 5_000, 60_000);
   const minIntervalMs = boundedInt(value.minIntervalMs, 5_000, 600_000);
-  const dailyViewCap = boundedInt(value.dailyViewCap, 0, 1_000);
   const estimatedViewValueUsd = boundedNumber(value.estimatedViewValueUsd, 0, 0.05);
-  if (minDwellMs === null || minIntervalMs === null || dailyViewCap === null || estimatedViewValueUsd === null) {
+  if (minDwellMs === null || minIntervalMs === null || estimatedViewValueUsd === null) {
     return null;
   }
 
@@ -111,5 +109,5 @@ export function parseConfig(value: unknown): ClientConfig | null {
     sites[surface] = site;
   }
 
-  return { minDwellMs, minIntervalMs, dailyViewCap, estimatedViewValueUsd, sites };
+  return { minDwellMs, minIntervalMs, estimatedViewValueUsd, sites };
 }

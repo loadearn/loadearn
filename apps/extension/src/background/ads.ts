@@ -42,15 +42,13 @@ export async function getSnapshot(): Promise<StateSnapshot> {
 
 async function reserveSlot(tabId: number): Promise<boolean> {
   return withLock(async () => {
-    const [settings, stats, config, lastServe] = await Promise.all([
+    const [settings, config, lastServe] = await Promise.all([
       settingsItem.getValue(),
-      statsItem.getValue(),
       getConfig(),
       lastServeItem.getValue(),
     ]);
     const now = Date.now();
     if (!settings.consent || !settings.enabled || isPaused(settings, now)) return false;
-    if (rollStats(stats, now).viewsToday >= config.dailyViewCap) return false;
     if (now - (lastServe[tabId] ?? 0) < config.minIntervalMs) return false;
     await lastServeItem.setValue({ ...lastServe, [tabId]: now });
     return true;
@@ -125,8 +123,6 @@ export async function recordView(viewId: string, tabId: number): Promise<{ earne
     }
 
     const stats = rollStats(await statsItem.getValue(), now);
-    if (stats.viewsToday >= config.dailyViewCap) return null;
-
     const earnedUsd = view.event.source === 'house' ? 0 : (view.valueUsd ?? config.estimatedViewValueUsd);
     await pendingItem.setValue({ ...pending, [viewId]: { ...view, viewedAt: now } });
     await statsItem.setValue({

@@ -15,7 +15,7 @@ describe('parseConfig', () => {
 
   it('rejects out-of-range limits', () => {
     expect(parseConfig({ ...clone(), minDwellMs: 1_000 })).toBeNull();
-    expect(parseConfig({ ...clone(), dailyViewCap: 5_000 })).toBeNull();
+    expect(parseConfig({ ...clone(), minIntervalMs: 1_000 })).toBeNull();
   });
 
   it('rejects missing or oversized selectors', () => {
