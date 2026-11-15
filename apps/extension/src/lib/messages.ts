@@ -5,6 +5,7 @@ import type { AccountStats, Ad, ContentConfig, StateSnapshot, Surface } from './
 export type ContentRequest =
   | { type: 'content:init'; surface: Surface }
   | { type: 'ad:request'; surface: Surface }
+  | { type: 'ad:shown'; viewId: string }
   | { type: 'ad:viewed'; viewId: string }
   | { type: 'ad:clicked'; viewId: string }
   | { type: 'device:connect'; token: string };
@@ -21,6 +22,7 @@ export type Request = ContentRequest | PageRequest;
 export interface ResponseMap {
   'content:init': ContentConfig | null;
   'ad:request': Ad | null;
+  'ad:shown': null;
   'ad:viewed': { earnedUsd: number } | null;
   'ad:clicked': null;
   'device:connect': { connected: boolean };
@@ -52,6 +54,7 @@ export function parseContentRequest(value: unknown): ContentRequest | null {
     case 'content:init':
     case 'ad:request':
       return isSurface(message.surface) ? { type: message.type, surface: message.surface } : null;
+    case 'ad:shown':
     case 'ad:viewed':
     case 'ad:clicked':
       return isViewId(message.viewId) ? { type: message.type, viewId: message.viewId } : null;

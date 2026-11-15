@@ -23,7 +23,12 @@ const STYLES = `
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ad:hover .copy { text-decoration-color: var(--signal); }
 .advertiser { font-weight: 700; }
-.logo { flex: none; width: 32px; height: 32px; border-radius: 6px; }
+.logo { flex: none; width: 32px; height: 32px; border-radius: 6px; object-fit: contain; }
+.ad.rich { gap: 12px; }
+.ad.rich .logo { width: auto; height: auto; max-width: 240px; max-height: 160px; border-radius: 8px; }
+.body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.detail { font-size: 13px; color: var(--muted); overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2; line-clamp: 2; }
 .banner { display: block; width: min(320px, 100%); aspect-ratio: 16 / 5; margin: 2px 0; border-radius: 8px;
   overflow: hidden; outline: 1px solid var(--line); outline-offset: -1px; }
 .banner canvas { display: block; width: 100%; height: 100%; }
@@ -107,7 +112,15 @@ export function createCard(ad: Ad, themeSource: Element, handlers: CardHandlers)
   link.rel = 'noopener noreferrer sponsored';
   const copy = element('span', 'copy');
   copy.append(element('span', 'advertiser', ad.advertiser), document.createTextNode(` — ${ad.text}`));
-  link.append(copy);
+  if (ad.detail) {
+    // An ad with a description is drawn larger: a bigger image, and the description under the text.
+    link.classList.add('rich');
+    const body = element('span', 'body');
+    body.append(copy, element('span', 'detail', ad.detail));
+    link.append(body);
+  } else {
+    link.append(copy);
+  }
   const onLinkClick = (event: MouseEvent) => {
     if (event.isTrusted) handlers.onClick();
   };
@@ -117,6 +130,9 @@ export function createCard(ad: Ad, themeSource: Element, handlers: CardHandlers)
   if (ad.image?.format === 'logo') {
     const logo = element('canvas', 'logo');
     logo.setAttribute('aria-hidden', 'true');
+    // Empty until the image is drawn, so the card doesn't reserve a canvas's default size first.
+    logo.width = 0;
+    logo.height = 0;
     link.prepend(logo);
     drawImage(ad.image, logo, () => logo.remove());
   } else if (ad.image?.format === 'banner') {

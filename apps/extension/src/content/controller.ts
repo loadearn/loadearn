@@ -79,6 +79,7 @@ export function startController(surface: Surface, config: ContentConfig): Contro
           target: card.host,
           requiredMs: config.minDwellMs,
           canCount: () => activity.isActive(ACTIVITY_WINDOW_MS),
+          onVisible: () => void sendRequest({ type: 'ad:shown', viewId }).catch(() => undefined),
           onComplete: () => {
             view.qualified = true;
             void sendRequest({ type: 'ad:viewed', viewId })

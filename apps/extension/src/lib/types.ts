@@ -15,6 +15,8 @@ export interface Ad {
   source: AdSource;
   advertiser: string;
   text: string;
+  /** A longer description. An ad that has one is drawn larger, on two lines. */
+  detail?: string;
   url: string;
   image?: AdImage;
 }

@@ -7,6 +7,8 @@ describe('parseContentRequest', () => {
   it('accepts valid requests and drops extra fields', () => {
     expect(parseContentRequest({ type: 'ad:request', surface: 'chatgpt' })).toEqual({ type: 'ad:request', surface: 'chatgpt' });
     expect(parseContentRequest({ type: 'ad:viewed', viewId, extra: 1 })).toEqual({ type: 'ad:viewed', viewId });
+    expect(parseContentRequest({ type: 'ad:shown', viewId, url: 'https://evil.example' })).toEqual({ type: 'ad:shown', viewId });
+    expect(parseContentRequest({ type: 'ad:shown', viewId: 'nope' })).toBeNull();
   });
 
   it('rejects unknown surfaces, malformed ids and page-only requests', () => {

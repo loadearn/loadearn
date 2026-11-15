@@ -2,7 +2,7 @@ import { API_BASE } from '@/lib/env';
 import { PAYOUT_MINIMUM_USD } from '@/lib/config';
 import { truncate } from '@/lib/format';
 import type { AccountStats, Ad, ImageFormat, Surface } from '@/lib/types';
-import { safeHttpsUrl } from '@/lib/url';
+import { partnerTrackingUrl, safeHttpsUrl } from '@/lib/url';
 import { getConfig } from './remote-config';
 import { deviceTokenItem, queueItem } from './state';
 
@@ -10,6 +10,7 @@ const REQUEST_TIMEOUT_MS = 5_000;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const IMAGE_ID_PATTERN = /^[0-9a-f]{64}$/;
 const MAX_IMAGE_BYTES = 256 * 1024;
+const MAX_VIEW_VALUE_MICROS = 200_000;
 
 /** Image formats this version can draw. The server only sends campaigns in these formats or text. */
 export const SUPPORTED_FORMATS: readonly ImageFormat[] = ['logo', 'banner'];
@@ -17,6 +18,12 @@ export const SUPPORTED_FORMATS: readonly ImageFormat[] = ['logo', 'banner'];
 export interface RemoteAd extends Ad {
   adId: string;
   imageRef?: { format: ImageFormat; id: string };
+  /** Partner ads only: the link that tells the partner the ad was seen, and what the view pays the user. */
+  partner?: { impressionUrl: string; valueUsd: number };
+}
+
+function nonNegativeNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 function shortString(value: unknown, maxLength: number): string | null {
@@ -33,9 +40,19 @@ export function parseAdResponse(value: unknown): RemoteAd | null {
   const adId = shortString(fields.adId, 128);
   const advertiser = shortString(fields.advertiser, 200);
   const text = shortString(fields.text, 500);
-  const url = safeHttpsUrl(fields.url);
+  const detail = shortString(fields.detail, 500);
   const source = fields.source === 'partner' || fields.source === 'direct' || fields.source === 'house' ? fields.source : null;
+  // A partner ad is only usable with the partner's own click and impression links.
+  const url = source === 'partner' ? partnerTrackingUrl(fields.url, 'click') : safeHttpsUrl(fields.url);
   if (!viewId || !adId || !advertiser || !text || !url || !source) return null;
+
+  let partner: RemoteAd['partner'];
+  if (source === 'partner') {
+    const impressionUrl = partnerTrackingUrl(fields.impressionUrl, 'impression');
+    const valueMicros = nonNegativeNumber(fields.valueMicros);
+    if (!impressionUrl || valueMicros === null || valueMicros > MAX_VIEW_VALUE_MICROS) return null;
+    partner = { impressionUrl, valueUsd: valueMicros / 1_000_000 };
+  }
 
   const format = fields.format === 'logo' || fields.format === 'banner' ? fields.format : null;
   const imageId = typeof fields.imageId === 'string' && IMAGE_ID_PATTERN.test(fields.imageId) ? fields.imageId : null;
@@ -46,8 +63,10 @@ export function parseAdResponse(value: unknown): RemoteAd | null {
     source,
     advertiser: truncate(advertiser, 40),
     text: truncate(text, 90),
+    ...(detail && { detail: truncate(detail, 140) }),
     url,
     ...(format && imageId && { imageRef: { format, id: imageId } }),
+    ...(partner && { partner }),
   };
 }
 
@@ -87,7 +106,7 @@ export async function fetchAd(surface: Surface): Promise<RemoteAd | null> {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ surface, formats: SUPPORTED_FORMATS }),
+      body: JSON.stringify({ surface, formats: SUPPORTED_FORMATS, partnerAds: true }),
       credentials: 'omit',
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
@@ -103,8 +122,41 @@ export async function fetchAd(surface: Surface): Promise<RemoteAd | null> {
   }
 }
 
-function nonNegativeNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+/**
+ * Tells the ad partner that an ad was seen, from the user's own browser: the partner counts an
+ * impression by the request reaching it, and checks it against the browser that asked for the ad.
+ * Where the background has a DOM (Firefox) the link is loaded as an image; a service worker
+ * (Chrome) has no images, so it sends the same GET with fetch. No cookies are sent or kept.
+ */
+export async function confirmImpression(value: string): Promise<void> {
+  const url = partnerTrackingUrl(value, 'impression');
+  if (!url) return;
+  try {
+    if (typeof Image === 'function') {
+      await new Promise<void>((resolve) => {
+        const image = new Image();
+        const done = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        const timer = setTimeout(done, REQUEST_TIMEOUT_MS);
+        image.onload = done;
+        image.onerror = done;
+        image.referrerPolicy = 'no-referrer';
+        image.src = url;
+      });
+      return;
+    }
+    await fetch(url, {
+      mode: 'no-cors',
+      credentials: 'omit',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch {
+    // The impression is not retried: a late one would no longer describe what the user saw.
+  }
 }
 
 /** Server totals for the linked account, plus views still waiting in the local upload queue. */
@@ -133,8 +185,9 @@ export async function fetchAccountStats(): Promise<AccountStats | null> {
 
   const [queue, config] = await Promise.all([queueItem.getValue(), getConfig()]);
   const queuedViews = queue.filter((event) => event.type === 'view');
-  const queuedPaid = queuedViews.filter((event) => event.source !== 'house').length;
-  const queuedUsd = queuedPaid * config.estimatedViewValueUsd;
+  const queuedUsd = queuedViews
+    .filter((event) => event.source !== 'house')
+    .reduce((sum, event) => sum + (nonNegativeNumber(event.valueUsd) ?? config.estimatedViewValueUsd), 0);
 
   return {
     viewsToday: views + queuedViews.length,

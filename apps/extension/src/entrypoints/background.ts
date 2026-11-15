@@ -1,6 +1,6 @@
 import { browser, type Browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
-import { recordClick, recordView, serveAd, getSnapshot } from '@/background/ads';
+import { recordClick, recordShown, recordView, serveAd, getSnapshot } from '@/background/ads';
 import { fetchAccountStats } from '@/background/ad-api';
 import { flushQueue } from '@/background/queue';
 import { getConfig, refreshConfig } from '@/background/remote-config';
@@ -35,6 +35,8 @@ async function handleContent(request: ContentRequest, tabId: number, hostname: s
         selectors: config.sites[request.surface],
       };
     }
+    case 'ad:shown':
+      return recordShown(request.viewId, tabId);
     case 'ad:viewed':
       return recordView(request.viewId, tabId);
     case 'ad:clicked':

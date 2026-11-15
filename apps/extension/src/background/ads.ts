@@ -1,6 +1,6 @@
 import { CONNECT_URL } from '@/lib/env';
 import type { Ad, Settings, StateSnapshot, Surface } from '@/lib/types';
-import { fetchAd } from './ad-api';
+import { confirmImpression, fetchAd } from './ad-api';
 import { enqueue } from './queue';
 import { getConfig } from './remote-config';
 import {
@@ -65,8 +65,9 @@ export async function serveAd(surface: Surface, tabId: number): Promise<Ad | nul
 
   let ad: Ad;
   let adId: string;
+  let partner: { impressionUrl: string; valueUsd: number } | undefined;
   if (remote) {
-    ({ adId, ...ad } = remote);
+    ({ adId, partner, ...ad } = remote);
   } else {
     adId = 'connect-prompt';
     ad = { viewId: crypto.randomUUID(), source: 'house', ...CONNECT_PROMPT };
@@ -79,6 +80,7 @@ export async function serveAd(surface: Surface, tabId: number): Promise<Ad | nul
     viewedAt: null,
     clickedAt: null,
     tracked: remote !== null,
+    ...(partner && { impressionUrl: partner.impressionUrl, valueUsd: partner.valueUsd }),
     event: { viewId: ad.viewId, surface, source: ad.source, adId },
   };
   const stored = await withLock(async () => {
@@ -90,12 +92,31 @@ export async function serveAd(surface: Surface, tabId: number): Promise<Ad | nul
   return stored ? ad : null;
 }
 
+/**
+ * Called when the card is on screen. For a partner ad this confirms the impression with the
+ * partner, once, and only while the ad is still recent enough to count as a view.
+ */
+export async function recordShown(viewId: string, tabId: number): Promise<null> {
+  const impressionUrl = await withLock(async () => {
+    const pending = await pendingItem.getValue();
+    const view = pending[viewId];
+    if (!view?.impressionUrl || view.tabId !== tabId || Date.now() - view.servedAt > MAX_VIEW_DELAY_MS) return null;
+    const { impressionUrl: url, ...rest } = view;
+    await pendingItem.setValue({ ...pending, [viewId]: rest });
+    return url;
+  });
+  if (impressionUrl) await confirmImpression(impressionUrl);
+  return null;
+}
+
 export async function recordView(viewId: string, tabId: number): Promise<{ earnedUsd: number } | null> {
   return withLock(async () => {
     const [pending, config] = await Promise.all([pendingItem.getValue(), getConfig()]);
     const view = pending[viewId];
     const now = Date.now();
     if (!view || view.tabId !== tabId || view.viewedAt !== null) return null;
+    // A partner ad whose impression was never confirmed earned nothing from the partner, so it is not a view.
+    if (view.impressionUrl) return null;
     const elapsed = now - view.servedAt;
     if (elapsed < config.minDwellMs || elapsed > MAX_VIEW_DELAY_MS) return null;
     if (!view.tracked) {
@@ -106,7 +127,7 @@ export async function recordView(viewId: string, tabId: number): Promise<{ earne
     const stats = rollStats(await statsItem.getValue(), now);
     if (stats.viewsToday >= config.dailyViewCap) return null;
 
-    const earnedUsd = view.event.source === 'house' ? 0 : config.estimatedViewValueUsd;
+    const earnedUsd = view.event.source === 'house' ? 0 : (view.valueUsd ?? config.estimatedViewValueUsd);
     await pendingItem.setValue({ ...pending, [viewId]: { ...view, viewedAt: now } });
     await statsItem.setValue({
       ...stats,
@@ -115,7 +136,13 @@ export async function recordView(viewId: string, tabId: number): Promise<{ earne
       earnedTodayUsd: stats.earnedTodayUsd + earnedUsd,
       earnedTotalUsd: stats.earnedTotalUsd + earnedUsd,
     });
-    await enqueue({ ...view.event, id: crypto.randomUUID(), type: 'view', occurredAt: now });
+    await enqueue({
+      ...view.event,
+      id: crypto.randomUUID(),
+      type: 'view',
+      occurredAt: now,
+      ...(view.valueUsd !== undefined && { valueUsd: view.valueUsd }),
+    });
     return { earnedUsd };
   });
 }

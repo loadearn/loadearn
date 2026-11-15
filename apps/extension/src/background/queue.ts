@@ -10,6 +10,8 @@ export interface AdEvent {
   source: AdSource;
   adId: string;
   occurredAt: number;
+  /** What a partner view pays, kept so the popup can count it while it waits here. Never uploaded. */
+  valueUsd?: number;
 }
 
 const MAX_QUEUE_SIZE = 1_000;
@@ -34,7 +36,7 @@ export async function flushQueue(): Promise<void> {
     response = await fetch(`${API_BASE}/v1/events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ events: batch }),
+      body: JSON.stringify({ events: batch.map(({ valueUsd: _local, ...event }) => event) }),
       credentials: 'omit',
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });

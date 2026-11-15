@@ -41,6 +41,20 @@ describe('fetchAccountStats', () => {
     });
   });
 
+  it('counts a queued partner view at what it pays', async () => {
+    await deviceTokenItem.setValue(TOKEN);
+    await queueItem.setValue([
+      { id: 'a', type: 'view', viewId: 'v1', surface: 'chatgpt', source: 'partner', adId: 'x', occurredAt: Date.now(), valueUsd: 0.01188 },
+      { id: 'b', type: 'view', viewId: 'v2', surface: 'claude', source: 'direct', adId: 'y', occurredAt: Date.now() },
+    ]);
+    apiReturns({ viewsToday: 0, earnedTodayMicros: 0, pendingMicros: 0, lifetimeMicros: 0, payoutMinimumMicros: 5_000_000 });
+
+    const stats = await fetchAccountStats();
+    expect(stats?.viewsToday).toBe(2);
+    expect(stats?.earnedTodayUsd).toBeCloseTo(0.01188 + 0.0012);
+    expect(stats?.lifetimeUsd).toBeCloseTo(0.01188 + 0.0012);
+  });
+
   it('falls back to null when the server fails or returns bad data', async () => {
     await deviceTokenItem.setValue(TOKEN);
     apiReturns({ error: 'unavailable' }, 503);

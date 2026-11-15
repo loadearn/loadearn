@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { storage } from 'wxt/utils/storage';
-import { recordClick, recordView, serveAd } from '@/background/ads';
+import { recordClick, recordShown, recordView, serveAd } from '@/background/ads';
+import { flushQueue } from '@/background/queue';
 import { deviceTokenItem, queueItem, settingsItem, statsItem } from '@/background/state';
 
 const TAB = 7;
@@ -12,9 +13,38 @@ function apiReturns(body: unknown): void {
   vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => new Response(JSON.stringify(body))));
 }
 
-const partnerAd = {
-  ad: { viewId: VIEW_ID, adId: 'ad_1', source: 'partner', advertiser: 'Acme', text: 'Ship faster', url: 'https://acme.example' },
+const directAd = {
+  ad: { viewId: VIEW_ID, adId: 'ad_1', source: 'direct', advertiser: 'Acme', text: 'Ship faster', url: 'https://acme.example' },
 };
+
+const IMPRESSION_URL = 'https://api.adgentek.ai/ad-server/v1/track-impression?cp=19.8&sig=abc';
+const CLICK_URL = 'https://api.adgentek.ai/ad-server/v1/click-redirect?sig=abc';
+const partnerAd = {
+  ad: {
+    viewId: VIEW_ID,
+    adId: 'creative_1',
+    source: 'partner',
+    advertiser: 'acme.example',
+    text: 'Ship faster',
+    url: CLICK_URL,
+    impressionUrl: IMPRESSION_URL,
+    valueMicros: 11_880,
+  },
+};
+
+/** Answers ad requests with `body` and counts every other request, which can only be an impression. */
+function apiAndPartner(body: unknown): string[] {
+  const impressions: string[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation(async (url: string) => {
+      if (url.endsWith('/v1/ads')) return new Response(JSON.stringify(body));
+      impressions.push(url);
+      return new Response(null);
+    }),
+  );
+  return impressions;
+}
 
 describe('ad lifecycle', () => {
   beforeEach(async () => {
@@ -70,11 +100,11 @@ describe('ad lifecycle', () => {
 
   it('records an API ad once, after the dwell time, from the serving tab only', async () => {
     await deviceTokenItem.setValue(TOKEN);
-    apiReturns(partnerAd);
+    apiReturns(directAd);
     vi.useFakeTimers({ toFake: ['Date'] });
 
     const ad = await serveAd('chatgpt', TAB);
-    expect(ad).toEqual({ viewId: VIEW_ID, source: 'partner', advertiser: 'Acme', text: 'Ship faster', url: 'https://acme.example/' });
+    expect(ad).toEqual({ viewId: VIEW_ID, source: 'direct', advertiser: 'Acme', text: 'Ship faster', url: 'https://acme.example/' });
 
     expect(await recordView(VIEW_ID, TAB)).toBeNull();
     vi.advanceTimersByTime(10_000);
@@ -84,16 +114,111 @@ describe('ad lifecycle', () => {
 
     expect((await statsItem.getValue()).viewsToday).toBe(1);
     expect(await queueItem.getValue()).toEqual([
-      expect.objectContaining({ type: 'view', viewId: VIEW_ID, adId: 'ad_1', source: 'partner', surface: 'chatgpt' }),
+      expect.objectContaining({ type: 'view', viewId: VIEW_ID, adId: 'ad_1', source: 'direct', surface: 'chatgpt' }),
     ]);
   });
 
   it('records a click on an API ad once', async () => {
     await deviceTokenItem.setValue(TOKEN);
-    apiReturns(partnerAd);
+    apiReturns(directAd);
     await serveAd('gemini', TAB);
     await recordClick(VIEW_ID, TAB);
     await recordClick(VIEW_ID, TAB);
     expect((await queueItem.getValue()).filter((event) => event.type === 'click')).toHaveLength(1);
+  });
+
+  it('gives the page a partner ad without its impression link', async () => {
+    await deviceTokenItem.setValue(TOKEN);
+    apiAndPartner(partnerAd);
+    expect(await serveAd('claude', TAB)).toEqual({
+      viewId: VIEW_ID,
+      source: 'partner',
+      advertiser: 'acme.example',
+      text: 'Ship faster',
+      url: CLICK_URL,
+    });
+  });
+
+  it('confirms a partner impression once, when the serving tab shows the ad', async () => {
+    await deviceTokenItem.setValue(TOKEN);
+    const impressions = apiAndPartner(partnerAd);
+    await serveAd('claude', TAB);
+    expect(impressions).toEqual([]);
+
+    await recordShown(VIEW_ID, TAB + 1);
+    await recordShown('0b8f6c2e-7d0a-4c55-9b1e-2f3a4b5c6d7e', TAB);
+    expect(impressions).toEqual([]);
+
+    await recordShown(VIEW_ID, TAB);
+    await recordShown(VIEW_ID, TAB);
+    expect(impressions).toEqual([IMPRESSION_URL]);
+  });
+
+  it('does not confirm an impression for an ad shown too late', async () => {
+    await deviceTokenItem.setValue(TOKEN);
+    const impressions = apiAndPartner(partnerAd);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    await serveAd('claude', TAB);
+    vi.advanceTimersByTime(31 * 60 * 1000);
+    await recordShown(VIEW_ID, TAB);
+    expect(impressions).toEqual([]);
+  });
+
+  it('contacts no one when other ads are shown', async () => {
+    await deviceTokenItem.setValue(TOKEN);
+    const impressions = apiAndPartner(directAd);
+    await serveAd('claude', TAB);
+    await recordShown(VIEW_ID, TAB);
+    expect(impressions).toEqual([]);
+  });
+
+  it('counts a partner view at what it pays', async () => {
+    await deviceTokenItem.setValue(TOKEN);
+    apiAndPartner(partnerAd);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    await serveAd('claude', TAB);
+    await recordShown(VIEW_ID, TAB);
+    vi.advanceTimersByTime(10_000);
+    expect(await recordView(VIEW_ID, TAB)).toEqual({ earnedUsd: 0.01188 });
+    expect((await statsItem.getValue()).earnedTodayUsd).toBeCloseTo(0.01188);
+    expect(await queueItem.getValue()).toEqual([
+      expect.objectContaining({
+        type: 'view',
+        viewId: VIEW_ID,
+        adId: 'creative_1',
+        source: 'partner',
+        surface: 'claude',
+        valueUsd: 0.01188,
+      }),
+    ]);
+  });
+
+  it('does not count a partner view whose impression was never confirmed', async () => {
+    await deviceTokenItem.setValue(TOKEN);
+    apiAndPartner(partnerAd);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    await serveAd('claude', TAB);
+    vi.advanceTimersByTime(10_000);
+    expect(await recordView(VIEW_ID, TAB)).toBeNull();
+    expect((await statsItem.getValue()).viewsToday).toBe(0);
+    expect(await queueItem.getValue()).toEqual([]);
+
+    await recordShown(VIEW_ID, TAB);
+    expect(await recordView(VIEW_ID, TAB)).toEqual({ earnedUsd: 0.01188 });
+  });
+
+  it('uploads a queued view without what it pays', async () => {
+    await deviceTokenItem.setValue(TOKEN);
+    await queueItem.setValue([
+      { id: 'a', type: 'view', viewId: VIEW_ID, surface: 'claude', source: 'partner', adId: 'creative_1', occurredAt: 1, valueUsd: 0.01188 },
+    ]);
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await flushQueue();
+    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
+    expect(body).toEqual({
+      events: [{ id: 'a', type: 'view', viewId: VIEW_ID, surface: 'claude', source: 'partner', adId: 'creative_1', occurredAt: 1 }],
+    });
+    expect(await queueItem.getValue()).toEqual([]);
   });
 });
