@@ -31,7 +31,6 @@ export interface SiteSelectors {
 export interface ClientConfig {
   minDwellMs: number;
   minIntervalMs: number;
-  estimatedViewValueUsd: number;
   sites: Record<Surface, SiteSelectors>;
 }
 

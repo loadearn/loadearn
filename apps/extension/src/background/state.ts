@@ -11,7 +11,6 @@ export interface PendingView {
   tracked: boolean;
   /** Partner ads only. `impressionUrl` is removed once the impression has been confirmed. */
   impressionUrl?: string;
-  valueUsd?: number;
   event: Omit<AdEvent, 'id' | 'type' | 'occurredAt'>;
 }
 

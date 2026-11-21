@@ -63,7 +63,7 @@ export async function serveAd(surface: Surface, tabId: number): Promise<Ad | nul
 
   let ad: Ad;
   let adId: string;
-  let partner: { impressionUrl: string; valueUsd: number } | undefined;
+  let partner: { impressionUrl: string } | undefined;
   if (remote) {
     ({ adId, partner, ...ad } = remote);
   } else {
@@ -78,7 +78,7 @@ export async function serveAd(surface: Surface, tabId: number): Promise<Ad | nul
     viewedAt: null,
     clickedAt: null,
     tracked: remote !== null,
-    ...(partner && { impressionUrl: partner.impressionUrl, valueUsd: partner.valueUsd }),
+    ...(partner && { impressionUrl: partner.impressionUrl }),
     event: { viewId: ad.viewId, surface, source: ad.source, adId },
   };
   const stored = await withLock(async () => {
@@ -107,8 +107,13 @@ export async function recordShown(viewId: string, tabId: number): Promise<null> 
   return null;
 }
 
+/**
+ * Called once the card has been on screen long enough. The view is uploaded at once, and the card
+ * shows only what the server says it credited: nothing when it was not counted, the upload failed
+ * or the ad pays nothing.
+ */
 export async function recordView(viewId: string, tabId: number): Promise<{ earnedUsd: number } | null> {
-  const result = await withLock(async () => {
+  const eventId = await withLock(async () => {
     const [pending, config] = await Promise.all([pendingItem.getValue(), getConfig()]);
     const view = pending[viewId];
     const now = Date.now();
@@ -117,14 +122,23 @@ export async function recordView(viewId: string, tabId: number): Promise<{ earne
     if (view.impressionUrl) return null;
     const elapsed = now - view.servedAt;
     if (elapsed < config.minDwellMs || elapsed > MAX_VIEW_DELAY_MS) return null;
-    if (!view.tracked) {
-      await pendingItem.setValue({ ...pending, [viewId]: { ...view, viewedAt: now } });
-      return { earnedUsd: 0 };
-    }
-
-    const stats = rollStats(await statsItem.getValue(), now);
-    const earnedUsd = view.event.source === 'house' ? 0 : (view.valueUsd ?? config.estimatedViewValueUsd);
     await pendingItem.setValue({ ...pending, [viewId]: { ...view, viewedAt: now } });
+    if (!view.tracked) return '';
+
+    const id = crypto.randomUUID();
+    await enqueue({ ...view.event, id, type: 'view', occurredAt: now });
+    return id;
+  });
+  if (eventId === null) return null;
+  if (eventId === '') return { earnedUsd: 0 };
+
+  // Sent right away: the server only accepts a view for a short time after the ad was served.
+  const result = (await flushQueue().catch(() => null))?.get(eventId);
+  if (!result?.accepted) return { earnedUsd: 0 };
+
+  const earnedUsd = result.earnedMicros / 1_000_000;
+  await withLock(async () => {
+    const stats = rollStats(await statsItem.getValue(), Date.now());
     await statsItem.setValue({
       ...stats,
       viewsToday: stats.viewsToday + 1,
@@ -132,18 +146,8 @@ export async function recordView(viewId: string, tabId: number): Promise<{ earne
       earnedTodayUsd: stats.earnedTodayUsd + earnedUsd,
       earnedTotalUsd: stats.earnedTotalUsd + earnedUsd,
     });
-    await enqueue({
-      ...view.event,
-      id: crypto.randomUUID(),
-      type: 'view',
-      occurredAt: now,
-      ...(view.valueUsd !== undefined && { valueUsd: view.valueUsd }),
-    });
-    return { earnedUsd };
   });
-  // Sent right away: the server only accepts a view for a short time after the ad was served.
-  if (result) void flushQueue();
-  return result;
+  return { earnedUsd };
 }
 
 export async function recordClick(viewId: string, tabId: number): Promise<null> {

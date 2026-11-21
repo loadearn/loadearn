@@ -50,10 +50,10 @@ describe('parseAdResponse', () => {
 });
 
 describe('partner ads', () => {
-  it('keeps the partner links and what the view pays', () => {
+  it('keeps the partner links', () => {
     const parsed = parseAdResponse({ ad: partnerAd });
     expect(parsed?.url).toBe(partnerAd.url);
-    expect(parsed?.partner).toEqual({ impressionUrl, valueUsd: 0.01188 });
+    expect(parsed?.partner).toEqual({ impressionUrl });
   });
 
   it('keeps a description when there is one', () => {
@@ -71,13 +71,6 @@ describe('partner ads', () => {
     expect(parseAdResponse({ ad: { ...partnerAd, impressionUrl: undefined } })).toBeNull();
     expect(parseAdResponse({ ad: { ...partnerAd, url: 'https://acme.example/' } })).toBeNull();
     expect(parseAdResponse({ ad: { ...partnerAd, url: impressionUrl } })).toBeNull();
-  });
-
-  it('drops a partner ad without a sane value', () => {
-    expect(parseAdResponse({ ad: { ...partnerAd, valueMicros: undefined } })).toBeNull();
-    expect(parseAdResponse({ ad: { ...partnerAd, valueMicros: -1 } })).toBeNull();
-    expect(parseAdResponse({ ad: { ...partnerAd, valueMicros: 200_001 } })).toBeNull();
-    expect(parseAdResponse({ ad: { ...partnerAd, valueMicros: 0 } })?.partner?.valueUsd).toBe(0);
   });
 
   it('ignores partner fields on other ads', () => {

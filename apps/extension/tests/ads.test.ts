@@ -39,6 +39,27 @@ const partnerAd = {
   },
 };
 
+/**
+ * Answers ad requests with `body` and event uploads with `answer` for each uploaded event, and
+ * returns the uploaded batches.
+ */
+function apiCredits(body: unknown, answer: { accepted: boolean; earnedMicros?: unknown; reason?: string }): unknown[][] {
+  const uploads: unknown[][] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/v1/ads')) return new Response(JSON.stringify(body));
+      if (url.endsWith('/v1/events')) {
+        const { events } = JSON.parse(init?.body as string) as { events: { id: string }[] };
+        uploads.push(events);
+        return new Response(JSON.stringify({ results: events.map((event) => ({ id: event.id, reason: null, ...answer })) }));
+      }
+      return new Response(null);
+    }),
+  );
+  return uploads;
+}
+
 /** Answers ad requests with `body` and counts every other request, which can only be an impression. */
 function apiAndPartner(body: unknown): string[] {
   const impressions: string[] = [];
@@ -151,10 +172,11 @@ describe('ad lifecycle', () => {
     expect(await recordView(VIEW_ID, TAB)).toBeNull();
     vi.advanceTimersByTime(10_000);
     expect(await recordView(VIEW_ID, TAB + 1)).toBeNull();
-    expect(await recordView(VIEW_ID, TAB)).toEqual({ earnedUsd: 0.0012 });
+    // The upload fails, so nothing is known to be earned and nothing is shown or counted.
+    expect(await recordView(VIEW_ID, TAB)).toEqual({ earnedUsd: 0 });
     expect(await recordView(VIEW_ID, TAB)).toBeNull();
 
-    expect((await statsItem.getValue()).viewsToday).toBe(1);
+    expect((await statsItem.getValue()).viewsToday).toBe(0);
     expect(await queueItem.getValue()).toEqual([
       expect.objectContaining({ type: 'view', viewId: VIEW_ID, adId: 'ad_1', source: 'direct', surface: 'chatgpt' }),
     ]);
@@ -214,25 +236,52 @@ describe('ad lifecycle', () => {
     expect(impressions).toEqual([]);
   });
 
-  it('counts a partner view at what it pays', async () => {
+  it('shows exactly what the server credited for a view', async () => {
     await deviceTokenItem.setValue(TOKEN);
-    apiAndPartner(partnerAd);
+    const uploads = apiCredits(directAd, { accepted: true, earnedMicros: 750 });
     vi.useFakeTimers({ toFake: ['Date'] });
     await serveAd('claude', TAB);
-    await recordShown(VIEW_ID, TAB);
     vi.advanceTimersByTime(10_000);
-    expect(await recordView(VIEW_ID, TAB)).toEqual({ earnedUsd: 0.01188 });
-    expect((await statsItem.getValue()).earnedTodayUsd).toBeCloseTo(0.01188);
-    expect(await queueItem.getValue()).toEqual([
-      expect.objectContaining({
-        type: 'view',
-        viewId: VIEW_ID,
-        adId: 'creative_1',
-        source: 'partner',
-        surface: 'claude',
-        valueUsd: 0.01188,
-      }),
+    expect(await recordView(VIEW_ID, TAB)).toEqual({ earnedUsd: 0.00075 });
+    expect(await statsItem.getValue()).toMatchObject({ viewsToday: 1, earnedTodayUsd: 0.00075 });
+    expect(uploads).toEqual([[expect.objectContaining({ type: 'view', viewId: VIEW_ID, adId: 'ad_1', source: 'direct' })]]);
+    expect(await queueItem.getValue()).toEqual([]);
+  });
+
+  it('shows nothing for a view the server refused or credited nothing for', async () => {
+    await deviceTokenItem.setValue(TOKEN);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    for (const answer of [
+      { accepted: false, reason: 'user_daily_cap' },
+      { accepted: true, earnedMicros: 0 },
+      { accepted: true },
+      { accepted: true, earnedMicros: -5 },
+      { accepted: true, earnedMicros: 1.5 },
+      { accepted: true, earnedMicros: 5_000_000 },
+    ]) {
+      apiCredits(directAd, answer);
+      vi.advanceTimersByTime(60_000);
+      await serveAd('claude', TAB);
+      vi.advanceTimersByTime(10_000);
+      expect(await recordView(VIEW_ID, TAB)).toEqual({ earnedUsd: 0 });
+      await storage.clear('session');
+      await storage.clear('local');
+      await deviceTokenItem.setValue(TOKEN);
+      await settingsItem.setValue({ consent: true, enabled: true, pausedUntil: null });
+    }
+    expect((await statsItem.getValue()).earnedTodayUsd).toBe(0);
+  });
+
+  it('never uploads the same events twice at once', async () => {
+    await deviceTokenItem.setValue(TOKEN);
+    await queueItem.setValue([
+      { id: 'a', type: 'click', viewId: VIEW_ID, surface: 'claude', source: 'direct', adId: 'ad_1', occurredAt: 1 },
     ]);
+    const uploads = apiCredits(directAd, { accepted: true });
+    const [first, second] = await Promise.all([flushQueue(), flushQueue()]);
+    expect(uploads).toHaveLength(1);
+    expect(first.get('a')).toEqual({ accepted: true, earnedMicros: 0 });
+    expect(second.size).toBe(0);
   });
 
   it('does not count a partner view whose impression was never confirmed', async () => {
@@ -246,13 +295,14 @@ describe('ad lifecycle', () => {
     expect(await queueItem.getValue()).toEqual([]);
 
     await recordShown(VIEW_ID, TAB);
-    expect(await recordView(VIEW_ID, TAB)).toEqual({ earnedUsd: 0.01188 });
+    expect(await recordView(VIEW_ID, TAB)).toEqual({ earnedUsd: 0 });
+    expect(await queueItem.getValue()).toEqual([expect.objectContaining({ type: 'view', viewId: VIEW_ID })]);
   });
 
-  it('uploads a queued view without what it pays', async () => {
+  it('uploads a queued view as it was recorded', async () => {
     await deviceTokenItem.setValue(TOKEN);
     await queueItem.setValue([
-      { id: 'a', type: 'view', viewId: VIEW_ID, surface: 'claude', source: 'partner', adId: 'creative_1', occurredAt: 1, valueUsd: 0.01188 },
+      { id: 'a', type: 'view', viewId: VIEW_ID, surface: 'claude', source: 'partner', adId: 'creative_1', occurredAt: 1 },
     ]);
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);

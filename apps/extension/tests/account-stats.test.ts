@@ -24,7 +24,7 @@ describe('fetchAccountStats', () => {
     expect(await fetchAccountStats()).toBeNull();
   });
 
-  it('adds views still waiting in the upload queue to the server totals', async () => {
+  it('shows only what the server has counted, never views still waiting to be uploaded', async () => {
     await deviceTokenItem.setValue(TOKEN);
     await queueItem.setValue([
       { id: 'a', type: 'view', viewId: 'v1', surface: 'chatgpt', source: 'partner', adId: 'x', occurredAt: Date.now() },
@@ -41,27 +41,13 @@ describe('fetchAccountStats', () => {
     });
 
     expect(await fetchAccountStats()).toEqual({
-      viewsToday: 6,
-      earnedTodayUsd: 0.0024 + 0.0012,
-      lifetimeUsd: 0.01 + 0.0012,
-      balanceUsd: 0.0074 + 0.0012,
+      viewsToday: 4,
+      earnedTodayUsd: 0.0024,
+      lifetimeUsd: 0.01,
+      balanceUsd: 0.0074,
       availableUsd: 0.005,
       payoutMinimumUsd: 5,
     });
-  });
-
-  it('counts a queued partner view at what it pays', async () => {
-    await deviceTokenItem.setValue(TOKEN);
-    await queueItem.setValue([
-      { id: 'a', type: 'view', viewId: 'v1', surface: 'chatgpt', source: 'partner', adId: 'x', occurredAt: Date.now(), valueUsd: 0.01188 },
-      { id: 'b', type: 'view', viewId: 'v2', surface: 'claude', source: 'direct', adId: 'y', occurredAt: Date.now() },
-    ]);
-    apiReturns({ viewsToday: 0, earnedTodayMicros: 0, pendingMicros: 0, availableMicros: 0, lifetimeMicros: 0, payoutMinimumMicros: 5_000_000 });
-
-    const stats = await fetchAccountStats();
-    expect(stats?.viewsToday).toBe(2);
-    expect(stats?.earnedTodayUsd).toBeCloseTo(0.01188 + 0.0012);
-    expect(stats?.lifetimeUsd).toBeCloseTo(0.01188 + 0.0012);
   });
 
   it('never shows a negative balance', async () => {

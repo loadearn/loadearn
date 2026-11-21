@@ -3,14 +3,12 @@ import { PAYOUT_MINIMUM_USD } from '@/lib/config';
 import { truncate } from '@/lib/format';
 import type { AccountStats, Ad, ImageFormat, Surface } from '@/lib/types';
 import { partnerTrackingUrl, safeHttpsUrl } from '@/lib/url';
-import { getConfig } from './remote-config';
-import { deviceTokenItem, forgetDeviceToken, queueItem } from './state';
+import { deviceTokenItem, forgetDeviceToken } from './state';
 
 const REQUEST_TIMEOUT_MS = 5_000;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const IMAGE_ID_PATTERN = /^[0-9a-f]{64}$/;
 const MAX_IMAGE_BYTES = 256 * 1024;
-const MAX_VIEW_VALUE_MICROS = 200_000;
 
 /** Image formats this version can draw. The server only sends campaigns in these formats or text. */
 export const SUPPORTED_FORMATS: readonly ImageFormat[] = ['logo', 'banner'];
@@ -18,8 +16,8 @@ export const SUPPORTED_FORMATS: readonly ImageFormat[] = ['logo', 'banner'];
 export interface RemoteAd extends Ad {
   adId: string;
   imageRef?: { format: ImageFormat; id: string };
-  /** Partner ads only: the link that tells the partner the ad was seen, and what the view pays the user. */
-  partner?: { impressionUrl: string; valueUsd: number };
+  /** Partner ads only: the link that tells the partner the ad was seen. */
+  partner?: { impressionUrl: string };
 }
 
 function nonNegativeNumber(value: unknown): number | null {
@@ -49,9 +47,8 @@ export function parseAdResponse(value: unknown): RemoteAd | null {
   let partner: RemoteAd['partner'];
   if (source === 'partner') {
     const impressionUrl = partnerTrackingUrl(fields.impressionUrl, 'impression');
-    const valueMicros = nonNegativeNumber(fields.valueMicros);
-    if (!impressionUrl || valueMicros === null || valueMicros > MAX_VIEW_VALUE_MICROS) return null;
-    partner = { impressionUrl, valueUsd: valueMicros / 1_000_000 };
+    if (!impressionUrl) return null;
+    partner = { impressionUrl };
   }
 
   const format = fields.format === 'logo' || fields.format === 'banner' ? fields.format : null;
@@ -192,17 +189,12 @@ export async function fetchAccountStats(): Promise<AccountStats | null> {
     return null;
   }
 
-  const [queue, config] = await Promise.all([queueItem.getValue(), getConfig()]);
-  const queuedViews = queue.filter((event) => event.type === 'view');
-  const queuedUsd = queuedViews
-    .filter((event) => event.source !== 'house')
-    .reduce((sum, event) => sum + (nonNegativeNumber(event.valueUsd) ?? config.estimatedViewValueUsd), 0);
-
+  // Only what the server has counted: a view waiting to be uploaded may still be refused.
   return {
-    viewsToday: views + queuedViews.length,
-    earnedTodayUsd: earnedMicros / 1_000_000 + queuedUsd,
-    lifetimeUsd: lifetimeMicros / 1_000_000 + queuedUsd,
-    balanceUsd: Math.max(pendingMicros + availableMicros, 0) / 1_000_000 + queuedUsd,
+    viewsToday: views,
+    earnedTodayUsd: earnedMicros / 1_000_000,
+    lifetimeUsd: lifetimeMicros / 1_000_000,
+    balanceUsd: Math.max(pendingMicros + availableMicros, 0) / 1_000_000,
     availableUsd: Math.max(availableMicros, 0) / 1_000_000,
     payoutMinimumUsd: (nonNegativeNumber(fields.payoutMinimumMicros) || PAYOUT_MINIMUM_USD * 1_000_000) / 1_000_000,
   };

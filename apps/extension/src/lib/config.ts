@@ -14,7 +14,6 @@ export const PAYOUT_MINIMUM_USD = 5;
 export const DEFAULT_CONFIG: ClientConfig = {
   minDwellMs: 10_000,
   minIntervalMs: 10_000,
-  estimatedViewValueUsd: 0.0012,
   sites: {
     chatgpt: {
       generating: [
@@ -67,10 +66,6 @@ function boundedInt(value: unknown, min: number, max: number): number | null {
   return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max ? value : null;
 }
 
-function boundedNumber(value: unknown, min: number, max: number): number | null {
-  return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max ? value : null;
-}
-
 function parseSelectorList(value: unknown, allowEmpty: boolean): string[] | null {
   if (!Array.isArray(value) || value.length > MAX_SELECTORS) return null;
   if (!allowEmpty && value.length === 0) return null;
@@ -97,8 +92,7 @@ export function parseConfig(value: unknown): ClientConfig | null {
 
   const minDwellMs = boundedInt(value.minDwellMs, 5_000, 60_000);
   const minIntervalMs = boundedInt(value.minIntervalMs, 5_000, 600_000);
-  const estimatedViewValueUsd = boundedNumber(value.estimatedViewValueUsd, 0, 0.05);
-  if (minDwellMs === null || minIntervalMs === null || estimatedViewValueUsd === null) {
+  if (minDwellMs === null || minIntervalMs === null) {
     return null;
   }
 
@@ -109,5 +103,5 @@ export function parseConfig(value: unknown): ClientConfig | null {
     sites[surface] = site;
   }
 
-  return { minDwellMs, minIntervalMs, estimatedViewValueUsd, sites };
+  return { minDwellMs, minIntervalMs, sites };
 }
